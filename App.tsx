@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Restaurant, Review, RestaurantWithStats } from './types';
 import { searchRestaurants } from './services/geminiService';
 import ReviewModal from './components/ReviewModal';
@@ -16,6 +16,7 @@ const App: React.FC = () => {
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<Restaurant[]>([]);
   const [selectedRestaurantForReview, setSelectedRestaurantForReview] = useState<Restaurant | null>(null);
+  const [editingReview, setEditingReview] = useState<Review | null>(null);
   const [userLocation, setUserLocation] = useState<GeolocationCoordinates | undefined>(undefined);
 
   // Initialize data from localStorage
@@ -53,24 +54,46 @@ const App: React.FC = () => {
     setIsSearching(false);
   };
 
-  const handleAddReview = (reviewData: Omit<Review, 'id'>) => {
-    const newReview: Review = {
-      ...reviewData,
-      id: Math.random().toString(36).substr(2, 9),
-    };
+  const handleAddOrEditReview = (reviewData: Omit<Review, 'id'>) => {
+    if (editingReview) {
+      // Edit mode
+      setReviews(prev => prev.map(r => r.id === editingReview.id ? { ...reviewData, id: editingReview.id } : r));
+      setEditingReview(null);
+    } else {
+      // Add mode
+      const newReview: Review = {
+        ...reviewData,
+        id: Math.random().toString(36).substr(2, 9),
+      };
+      setReviews(prev => [...prev, newReview]);
 
-    setReviews(prev => [...prev, newReview]);
-
-    // Ensure restaurant is in the database
-    if (!restaurants.some(r => r.id === reviewData.restaurantId)) {
-      const restaurantToAdd = searchResults.find(r => r.id === reviewData.restaurantId);
-      if (restaurantToAdd) {
-        setRestaurants(prev => [...prev, restaurantToAdd]);
+      // Ensure restaurant is in the permanent list
+      if (!restaurants.some(r => r.id === reviewData.restaurantId)) {
+        const restaurantToAdd = searchResults.find(r => r.id === reviewData.restaurantId) 
+          || (selectedRestaurantForReview?.id === reviewData.restaurantId ? selectedRestaurantForReview : null);
+        
+        if (restaurantToAdd) {
+          setRestaurants(prev => [...prev, restaurantToAdd]);
+        }
       }
     }
     
     setSearchResults([]);
     setSearchQuery('');
+  };
+
+  const handleDeleteReview = (reviewId: string) => {
+    setReviews(prev => prev.filter(r => r.id !== reviewId));
+    // Optional: If no reviews left for a restaurant, keep it or remove it?
+    // We'll keep it so the history remains in the dashboard.
+  };
+
+  const startEditReview = (review: Review) => {
+    const restaurant = restaurants.find(r => r.id === review.restaurantId);
+    if (restaurant) {
+      setSelectedRestaurantForReview(restaurant);
+      setEditingReview(review);
+    }
   };
 
   const getAggregatedData = (): RestaurantWithStats[] => {
@@ -150,7 +173,10 @@ const App: React.FC = () => {
                     </p>
                   </div>
                   <button
-                    onClick={() => setSelectedRestaurantForReview(result)}
+                    onClick={() => {
+                      setSelectedRestaurantForReview(result);
+                      setEditingReview(null);
+                    }}
                     className="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-slate-800 transition-colors"
                   >
                     <Plus size={16} /> Review
@@ -176,13 +202,6 @@ const App: React.FC = () => {
               <h2 className="text-2xl font-bold text-slate-800">Recent Club Visits</h2>
               <p className="text-slate-500">The group's latest culinary adventures.</p>
             </div>
-            {dashboardData.length > 0 && (
-              <div className="flex items-center gap-4 text-sm font-medium">
-                <div className="flex items-center gap-1 text-orange-500">
-                  <Star size={16} className="fill-orange-500" /> Top Rated First
-                </div>
-              </div>
-            )}
           </div>
 
           {dashboardData.length === 0 ? (
@@ -201,7 +220,12 @@ const App: React.FC = () => {
                 <RestaurantCard 
                   key={rest.id} 
                   restaurant={rest} 
-                  onAddReview={(r) => setSelectedRestaurantForReview(r)} 
+                  onAddReview={(r) => {
+                    setSelectedRestaurantForReview(r);
+                    setEditingReview(null);
+                  }}
+                  onEditReview={startEditReview}
+                  onDeleteReview={handleDeleteReview}
                 />
               ))}
             </div>
@@ -214,8 +238,12 @@ const App: React.FC = () => {
         <ReviewModal
           isOpen={true}
           restaurant={selectedRestaurantForReview}
-          onClose={() => setSelectedRestaurantForReview(null)}
-          onSubmit={handleAddReview}
+          initialData={editingReview || undefined}
+          onClose={() => {
+            setSelectedRestaurantForReview(null);
+            setEditingReview(null);
+          }}
+          onSubmit={handleAddOrEditReview}
         />
       )}
     </div>

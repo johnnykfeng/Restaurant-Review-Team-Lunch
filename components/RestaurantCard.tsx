@@ -1,14 +1,21 @@
 
 import React, { useState } from 'react';
 import { RestaurantWithStats, Review } from '../types';
-import { Star, MapPin, ChevronDown, ChevronUp, ExternalLink, MessageCircle } from 'lucide-react';
+import { Star, MapPin, ChevronDown, ChevronUp, ExternalLink, Trash2, Edit2 } from 'lucide-react';
 
 interface RestaurantCardProps {
   restaurant: RestaurantWithStats;
   onAddReview: (restaurant: RestaurantWithStats) => void;
+  onEditReview: (review: Review) => void;
+  onDeleteReview: (reviewId: string) => void;
 }
 
-const RestaurantCard: React.FC<RestaurantCardProps> = ({ restaurant, onAddReview }) => {
+const RestaurantCard: React.FC<RestaurantCardProps> = ({ 
+  restaurant, 
+  onAddReview, 
+  onEditReview, 
+  onDeleteReview 
+}) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -47,14 +54,14 @@ const RestaurantCard: React.FC<RestaurantCardProps> = ({ restaurant, onAddReview
 
         <div className="flex items-center justify-between mt-6">
           <div className="flex -space-x-2">
-            {restaurant.reviews.slice(0, 3).map((r, i) => (
-              <div key={i} className="w-8 h-8 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-600">
+            {restaurant.reviews.slice(0, 5).map((r, i) => (
+              <div key={r.id} className="w-8 h-8 rounded-full bg-slate-200 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-600">
                 {r.userName.charAt(0).toUpperCase()}
               </div>
             ))}
-            {restaurant.reviews.length > 3 && (
+            {restaurant.reviews.length > 5 && (
               <div className="w-8 h-8 rounded-full bg-slate-100 border-2 border-white flex items-center justify-center text-[10px] font-bold text-slate-400">
-                +{restaurant.reviews.length - 3}
+                +{restaurant.reviews.length - 5}
               </div>
             )}
           </div>
@@ -82,16 +89,38 @@ const RestaurantCard: React.FC<RestaurantCardProps> = ({ restaurant, onAddReview
             <p className="text-slate-400 text-sm text-center py-4">No reviews yet. Be the first!</p>
           ) : (
             restaurant.reviews.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map((review) => (
-              <div key={review.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+              <div key={review.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 group">
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-slate-800">{review.userName}</span>
                     <span className="text-xs text-slate-400">• {new Date(review.date).toLocaleDateString()}</span>
                   </div>
-                  <div className="flex items-center text-orange-500">
-                    {Array.from({ length: review.score }).map((_, i) => (
-                      <Star key={i} size={12} fill="currentColor" />
-                    ))}
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center text-orange-500">
+                      {Array.from({ length: review.score }).map((_, i) => (
+                        <Star key={i} size={12} fill="currentColor" />
+                      ))}
+                    </div>
+                    <div className="hidden group-hover:flex items-center gap-1">
+                      <button 
+                        onClick={() => onEditReview(review)}
+                        className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-md transition-colors"
+                        title="Edit Review"
+                      >
+                        <Edit2 size={14} />
+                      </button>
+                      <button 
+                        onClick={() => {
+                          if (confirm('Delete this review?')) {
+                            onDeleteReview(review.id);
+                          }
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                        title="Delete Review"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 </div>
                 {review.comments && (

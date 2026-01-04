@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Restaurant, Review } from '../types';
 import { X, Star, DollarSign, Calendar, User, MessageSquare } from 'lucide-react';
 
@@ -8,14 +8,32 @@ interface ReviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (review: Omit<Review, 'id'>) => void;
+  initialData?: Review;
 }
 
-const ReviewModal: React.FC<ReviewModalProps> = ({ restaurant, isOpen, onClose, onSubmit }) => {
+const ReviewModal: React.FC<ReviewModalProps> = ({ restaurant, isOpen, onClose, onSubmit, initialData }) => {
   const [userName, setUserName] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [score, setScore] = useState(5);
   const [spent, setSpent] = useState<string>('');
   const [comments, setComments] = useState('');
+
+  useEffect(() => {
+    if (initialData && isOpen) {
+      setUserName(initialData.userName);
+      setDate(initialData.date);
+      setScore(initialData.score);
+      setSpent(initialData.spent.toString());
+      setComments(initialData.comments || '');
+    } else if (isOpen) {
+      // Reset for new entry
+      setUserName('');
+      setDate(new Date().toISOString().split('T')[0]);
+      setScore(5);
+      setSpent('');
+      setComments('');
+    }
+  }, [initialData, isOpen]);
 
   if (!isOpen) return null;
 
@@ -29,10 +47,6 @@ const ReviewModal: React.FC<ReviewModalProps> = ({ restaurant, isOpen, onClose, 
       spent: parseFloat(spent) || 0,
       comments
     });
-    // Reset
-    setUserName('');
-    setSpent('');
-    setComments('');
     onClose();
   };
 
@@ -41,7 +55,7 @@ const ReviewModal: React.FC<ReviewModalProps> = ({ restaurant, isOpen, onClose, 
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
         <div className="flex items-center justify-between p-6 border-b">
           <div>
-            <h2 className="text-xl font-bold text-slate-800">Add Review</h2>
+            <h2 className="text-xl font-bold text-slate-800">{initialData ? 'Edit Review' : 'Add Review'}</h2>
             <p className="text-sm text-slate-500">{restaurant.name}</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
@@ -130,7 +144,7 @@ const ReviewModal: React.FC<ReviewModalProps> = ({ restaurant, isOpen, onClose, 
             type="submit"
             className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-orange-500/30 transition-all active:scale-95"
           >
-            Submit Review
+            {initialData ? 'Update Review' : 'Submit Review'}
           </button>
         </form>
       </div>
