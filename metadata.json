@@ -1,0 +1,7 @@
+{
+  "name": "BiteClub: Group Restaurant Reviews",
+  "description": "A sleek, collaborative platform for friends to track and review their recent dining experiences. Features Google Maps integration for accurate restaurant details and social review sharing.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
