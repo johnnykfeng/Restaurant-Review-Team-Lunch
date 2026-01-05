@@ -1,13 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Restaurant, Review, RestaurantWithStats } from './types';
 import { searchRestaurants } from './services/geminiService';
+import { db } from './services/dbService';
 import ReviewModal from './components/ReviewModal';
 import RestaurantCard from './components/RestaurantCard';
-import { Search, Plus, Utensils, Star, MapPin, Loader2, Sparkles } from 'lucide-react';
-
-const STORAGE_KEY_RESTAURANTS = 'biteclub_restaurants';
-const STORAGE_KEY_REVIEWS = 'biteclub_reviews';
+import CloudSettingsModal from './components/CloudSettingsModal';
+import { Search, Plus, Utensils, Star, MapPin, Loader2, Sparkles, Cloud, CloudOff } from 'lucide-react';
 
 const App: React.FC = () => {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
@@ -18,31 +17,28 @@ const App: React.FC = () => {
   const [selectedRestaurantForReview, setSelectedRestaurantForReview] = useState<Restaurant | null>(null);
   const [editingReview, setEditingReview] = useState<Review | null>(null);
   const [userLocation, setUserLocation] = useState<GeolocationCoordinates | undefined>(undefined);
+  const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
+  const [isCloudConnected, setIsCloudConnected] = useState(!!db.getCloudConfig());
 
-  // Initialize data from localStorage
+  const loadData = useCallback(async () => {
+    const [fetchedRest, fetchedRev] = await Promise.all([
+      db.getRestaurants(),
+      db.getReviews()
+    ]);
+    setRestaurants(fetchedRest);
+    setReviews(fetchedRev);
+  }, []);
+
+  // Initial Load
   useEffect(() => {
-    const storedRestaurants = localStorage.getItem(STORAGE_KEY_RESTAURANTS);
-    const storedReviews = localStorage.getItem(STORAGE_KEY_REVIEWS);
-    if (storedRestaurants) setRestaurants(JSON.parse(storedRestaurants));
-    if (storedReviews) setReviews(JSON.parse(storedReviews));
-
-    // Request location for better search
+    loadData();
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => setUserLocation(pos.coords),
         (err) => console.warn("Location permission denied", err)
       );
     }
-  }, []);
-
-  // Sync state to localStorage
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_RESTAURANTS, JSON.stringify(restaurants));
-  }, [restaurants]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_REVIEWS, JSON.stringify(reviews));
-  }, [reviews]);
+  }, [loadData]);
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -54,38 +50,39 @@ const App: React.FC = () => {
     setIsSearching(false);
   };
 
-  const handleAddOrEditReview = (reviewData: Omit<Review, 'id'>) => {
-    if (editingReview) {
-      // Edit mode
-      setReviews(prev => prev.map(r => r.id === editingReview.id ? { ...reviewData, id: editingReview.id } : r));
-      setEditingReview(null);
-    } else {
-      // Add mode
-      const newReview: Review = {
-        ...reviewData,
-        id: Math.random().toString(36).substr(2, 9),
-      };
-      setReviews(prev => [...prev, newReview]);
+  const handleAddOrEditReview = async (reviewData: Omit<Review, 'id'>) => {
+    const reviewId = editingReview?.id || Math.random().toString(36).substr(2, 9);
+    const newReview: Review = { ...reviewData, id: reviewId };
 
-      // Ensure restaurant is in the permanent list
-      if (!restaurants.some(r => r.id === reviewData.restaurantId)) {
-        const restaurantToAdd = searchResults.find(r => r.id === reviewData.restaurantId) 
-          || (selectedRestaurantForReview?.id === reviewData.restaurantId ? selectedRestaurantForReview : null);
-        
-        if (restaurantToAdd) {
-          setRestaurants(prev => [...prev, restaurantToAdd]);
-        }
+    // Update UI immediately
+    if (editingReview) {
+      setReviews(prev => prev.map(r => r.id === reviewId ? newReview : r));
+    } else {
+      setReviews(prev => [...prev, newReview]);
+      // Save restaurant if it's new
+      const restaurantToAdd = searchResults.find(r => r.id === reviewData.restaurantId) 
+        || (selectedRestaurantForReview?.id === reviewData.restaurantId ? selectedRestaurantForReview : null);
+      
+      if (restaurantToAdd) {
+        setRestaurants(prev => {
+          if (!prev.some(r => r.id === restaurantToAdd.id)) return [...prev, restaurantToAdd];
+          return prev;
+        });
+        await db.saveRestaurant(restaurantToAdd);
       }
     }
+
+    // Persist
+    await db.saveReview(newReview);
     
+    setEditingReview(null);
     setSearchResults([]);
     setSearchQuery('');
   };
 
-  const handleDeleteReview = (reviewId: string) => {
+  const handleDeleteReview = async (reviewId: string) => {
     setReviews(prev => prev.filter(r => r.id !== reviewId));
-    // Optional: If no reviews left for a restaurant, keep it or remove it?
-    // We'll keep it so the history remains in the dashboard.
+    await db.deleteReview(reviewId);
   };
 
   const startEditReview = (review: Review) => {
@@ -114,7 +111,6 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
-      {/* Navbar */}
       <nav className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="bg-orange-500 p-2 rounded-lg text-white">
@@ -123,15 +119,23 @@ const App: React.FC = () => {
           <h1 className="text-2xl font-black tracking-tighter text-slate-900">BiteClub</h1>
         </div>
         <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setIsCloudModalOpen(true)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
+              isCloudConnected ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'bg-slate-100 text-slate-400'
+            }`}
+          >
+            {isCloudConnected ? <Cloud size={14} /> : <CloudOff size={14} />}
+            {isCloudConnected ? 'Cloud Synced' : 'Local Only'}
+          </button>
            <div className="hidden md:flex flex-col items-end">
-             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Global Stats</span>
-             <span className="text-sm font-semibold text-slate-600">{reviews.length} Experiences Shared</span>
+             <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Experiences</span>
+             <span className="text-sm font-semibold text-slate-600">{reviews.length} Shared</span>
            </div>
         </div>
       </nav>
 
       <main className="max-w-4xl mx-auto px-6 mt-8">
-        {/* Search / Add Section */}
         <section className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 mb-12">
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-slate-800 mb-2 flex items-center gap-2">
@@ -161,7 +165,6 @@ const App: React.FC = () => {
             </button>
           </form>
 
-          {/* Search Results Dropdown-like UI */}
           {searchResults.length > 0 && (
             <div className="mt-4 border border-slate-200 rounded-2xl bg-white overflow-hidden divide-y divide-slate-100 animate-in fade-in slide-in-from-top-2">
               {searchResults.map((result) => (
@@ -195,7 +198,6 @@ const App: React.FC = () => {
           )}
         </section>
 
-        {/* Dashboard Section */}
         <section>
           <div className="flex items-center justify-between mb-8 px-2">
             <div>
@@ -233,7 +235,6 @@ const App: React.FC = () => {
         </section>
       </main>
 
-      {/* Review Modal */}
       {selectedRestaurantForReview && (
         <ReviewModal
           isOpen={true}
@@ -246,6 +247,15 @@ const App: React.FC = () => {
           onSubmit={handleAddOrEditReview}
         />
       )}
+
+      <CloudSettingsModal
+        isOpen={isCloudModalOpen}
+        onClose={() => setIsCloudModalOpen(false)}
+        onConfigChange={() => {
+          setIsCloudConnected(!!db.getCloudConfig());
+          loadData();
+        }}
+      />
     </div>
   );
 };
